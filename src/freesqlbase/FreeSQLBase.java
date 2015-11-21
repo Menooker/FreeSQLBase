@@ -94,7 +94,7 @@ public class FreeSQLBase {
 
 			pos = new PipedOutputStream(); pis = new PipedInputStream(pos);
 			FileInputStream s = new FileInputStream(
-					new File("/media/NEWSMY/freebase.gz")); 
+					new File("/home/freebase.gz")); 
 			readth.start();
 			decompress(s);
 			 
