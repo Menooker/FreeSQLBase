@@ -145,7 +145,7 @@ public class FreeSQLBase {
 		String url = null; 
 		String name,type;		
 		int id=0;
-		public int i = 0;
+		public long i = 0;
 		MyTask[] tsk;
 		int tsk_cnt=0;
 		final int TASKS=65536/4;
@@ -248,7 +248,7 @@ public class FreeSQLBase {
 		try {
 			try {
 				//create table main( url varchar(256), name varchar(60000), type varchar(128), id int(32) primary key, rank int(32));
-
+				//2*Maxint-1164214229=3130753067
 				Class.forName("com.mysql.jdbc.Driver").newInstance(); // MYSQL驱动
 				con = DriverManager.getConnection("jdbc:mysql://127.0.0.1:3306/master", "root", "thisismysql"); // 链接本地MYSQL
 				System.out.println("yes");
