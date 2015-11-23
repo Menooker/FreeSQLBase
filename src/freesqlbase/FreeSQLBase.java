@@ -7,6 +7,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -25,7 +26,8 @@ public class FreeSQLBase {
 	static PipedOutputStream pos;
 	static PipedInputStream pis;
 	static Connection con = null; // 定义一个MYSQL链接对象
-	static ExecutorService pool = Executors.newFixedThreadPool(4);
+	static ExecutorService pool = Executors.newFixedThreadPool(2);
+	static ExecutorService linepool = Executors.newFixedThreadPool(4);
 	//static ThreadPoolExecutor pool = new ThreadPoolExecutor(4, 8, 3, TimeUnit.SECONDS, new ArrayBlockingQueue<Runnable>(200),
     //        new ThreadPoolExecutor.AbortPolicy());
 	static String TrimURL(String url)
@@ -141,17 +143,48 @@ public class FreeSQLBase {
 		}
 	};
 	
-	static class ReaderThread extends  Thread {
+	
+	static private final class EntryTask implements Callable<String> {
+		MyTask2 task;
+		String[] line;
+		public EntryTask(MyTask2 tsk,String[] lne){
+			task=tsk;
+			line=lne;
+		}
+		@Override
+		public String call() {
+			task.parse(line);
+			task.pending.decrementAndGet();
+			return null;
+		}
+		
+	}
+	
+	class SQLBuffer{
+		MyTask[] tsk;
+		int tsk_cnt=0;	
+		final int TASKS=65536/4;
+		
+		void put(String url,String name,String type,int id)
+		{
+			MyTask t=new MyTask(url,name,type,id);
+			
+		}
+	}
+	
+	class MyTask2
+	{
 		String url = null; 
 		String name,type;		
 		int id=0;
-		public long i = 0;
-		MyTask[] tsk;
-		int tsk_cnt=0;
-		final int TASKS=65536/4;
-		
+		public AtomicInteger pending=new AtomicInteger(0);
+		public MyTask2(String u)
+		{
+			url=u;
+		}
 		void parse(String[] line)
 		{
+			
 			//System.out.println("1111");
 			if(line[1].equals("<http://rdf.freebase.com/ns/type.object.name>"))
 			{
@@ -165,12 +198,21 @@ public class FreeSQLBase {
 				type=line[2];
 			}
 		}	
+	}
+	
+	static class ReaderThread extends  Thread {
+
+		public long i = 0;
+		public int id=0;
+
 		
+
 		@Override
 		public void run() {
 			BufferedReader reader = new BufferedReader(new InputStreamReader(pis));
 			
-
+			String cururl=null;
+			MyTask2 curtsk=null;
 			int lastq=0;
 			for (;;) {
 				i++;
@@ -186,46 +228,24 @@ public class FreeSQLBase {
 						break;
 					}
 					String[] sp=line.split("\t");
-					parse(sp);
-					if(!sp[0].equals(url))
+
+					if(!sp[0].equals(cururl))
 					{
-						if(url==null)
+						if(cururl==null)
 						{
-							url=sp[0];
-							tsk_cnt=0;
-							tsk=new MyTask[TASKS];
+							cururl=sp[0];
 						}
 						else
 						{
-							while (StringTask.pending_cnt.get() > 10) {
-
-								System.out.println("[warning] Queue too long, now sleeping");
-								try {
-									Thread.sleep(5000);
-								} catch (InterruptedException e) {
-									// TODO Auto-generated catch block
-									e.printStackTrace();
-								}
-
-							}
-							MyTask ntsk=new MyTask(TrimURL(url),name,TrimURL(type),id);
-							tsk[tsk_cnt]=ntsk;
-							tsk_cnt++;
-							if(tsk_cnt==TASKS)
-							{
-								StringTask.pending_cnt.incrementAndGet();
-								pool.submit(new StringTask(tsk,tsk_cnt));
-								tsk_cnt=0;
-								tsk=new MyTask[TASKS];
-							}
-							url=sp[0];
+							curtsk=null;
+							cururl=sp[0];
 							id++;
-							name=null;
-							type=null;
 						}
 					}
-					parse(sp);
-					
+					if(curtsk==null)
+						curtsk=new MyTask2(sp[0],id);
+					curtsk.pending.incrementAndGet();
+					linepool.submit(new EntryTask(curtsk,sp));				
 				}
 				catch (IOException e) {
 					// TODO Auto-generated catch block
