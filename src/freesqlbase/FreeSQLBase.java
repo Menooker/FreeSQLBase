@@ -246,7 +246,7 @@ public class FreeSQLBase {
 		// TODO Auto-generated method stub
 		try {
 			try {
-				//create table main( url varchar(256), name varchar(60000), type varchar(128), id int(32), rank int(32));
+				//create table main( url varchar(256), name varchar(60000), type varchar(128), id int(32) primary key, rank int(32));
 
 				Class.forName("com.mysql.jdbc.Driver").newInstance(); // MYSQL驱动
 				con = DriverManager.getConnection("jdbc:mysql://127.0.0.1:3306/master", "root", "thisismysql"); // 链接本地MYSQL
