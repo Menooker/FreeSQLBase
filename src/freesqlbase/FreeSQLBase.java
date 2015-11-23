@@ -278,7 +278,6 @@ public class FreeSQLBase {
 		int count;
 		byte data[] = new byte[4096];
 
-		System.out.println("KKK");
 		while ((count = gis.read(data, 0, 4096)) != -1) {
 			pos.write(data, 0, count);
 		}
