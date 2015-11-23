@@ -108,9 +108,10 @@ public class FreeSQLBase {
 				task=null;
 				
 				stmt.executeUpdate();
+				stmt.close();
 				cnt.incrementAndGet();
 				pending_cnt.decrementAndGet();
-
+				
 			} catch (SQLException e) {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
