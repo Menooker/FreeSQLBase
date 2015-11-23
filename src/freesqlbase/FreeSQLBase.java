@@ -32,7 +32,16 @@ public class FreeSQLBase {
 	{
 		if(url==null)
 			return null;
-		return url.substring(url.lastIndexOf('/')+1);
+		int last;
+		if(url.charAt(url.length()-1)=='>')
+		{
+			last=url.length()-1;
+		}
+		else
+		{
+			last=url.length();
+		}
+		return url.substring(url.lastIndexOf('/')+1,last);
 	}
 	
 	
@@ -138,7 +147,7 @@ public class FreeSQLBase {
 		public int i = 0;
 		MyTask[] tsk;
 		int tsk_cnt=0;
-		final int TASKS=65536;
+		final int TASKS=65536/4;
 		
 		void parse(String[] line)
 		{
