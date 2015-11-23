@@ -30,6 +30,7 @@ public class FreeSQLBase {
 	static ExecutorService linepool = Executors.newFixedThreadPool(4);
 	//static ThreadPoolExecutor pool = new ThreadPoolExecutor(4, 8, 3, TimeUnit.SECONDS, new ArrayBlockingQueue<Runnable>(200),
     //        new ThreadPoolExecutor.AbortPolicy());
+	static SQLBuffer sqlbuf=new SQLBuffer();
 	static String TrimURL(String url)
 	{
 		if(url==null)
@@ -47,11 +48,11 @@ public class FreeSQLBase {
 	}
 	
 	
-	static class MyTask
+	static class SQLTask
 	{
 		String name,type,url;		
 		int id;
-		public MyTask(String url,String name,String type,int id)
+		public SQLTask(String url,String name,String type,int id)
 		{
 			if(url!=null && url.length()>256)
 			{
@@ -78,11 +79,12 @@ public class FreeSQLBase {
 	}
 	
 	static private final class StringTask implements Callable<String> {
-		MyTask[] task;
+		SQLTask[] task;
 		int count;
 		static AtomicInteger cnt=new AtomicInteger(0);
 		static AtomicInteger pending_cnt=new AtomicInteger(0);
-		public StringTask(MyTask[] tsk,int cnt)
+		
+		public StringTask(SQLTask[] tsk,int cnt)
 		{
 			count=cnt;
 			task=tsk;
@@ -92,7 +94,7 @@ public class FreeSQLBase {
 			PreparedStatement stmt;
 			try {
 				StringBuffer buf=new StringBuffer();
-				buf.append("INSERT INTO main VALUES (?,?,?,?,0)");
+				buf.append("INSERT INTO main2 VALUES (?,?,?,?,0)");
 				for(int i=1;i<count;i++)
 				{
 					buf.append(",(?,?,?,?,0)");
@@ -137,49 +139,82 @@ public class FreeSQLBase {
 					
 				}
 			
-				System.out.printf("[stats] i = %d, tasksdone = %d, task_queued = %d\n",
-						readth.i,StringTask.cnt.get(),StringTask.pending_cnt.get());
+				System.out.printf("[stats] i = %d, tasksdone = %d, sql_queued = %d, line_queued = %d\n",
+						readth.i,StringTask.cnt.get(),StringTask.pending_cnt.get(),EntryTask.pending.get());
 			}
 		}
 	};
 	
 	
 	static private final class EntryTask implements Callable<String> {
-		MyTask2 task;
+		LineTask task;
 		String[] line;
-		public EntryTask(MyTask2 tsk,String[] lne){
+		static AtomicInteger pending=new AtomicInteger(0);
+		public EntryTask(LineTask tsk,String[] lne){
 			task=tsk;
 			line=lne;
+			pending.incrementAndGet();
 		}
 		@Override
 		public String call() {
 			task.parse(line);
 			task.pending.decrementAndGet();
+			if(task.ended && task.pending.get()==0)
+			{
+				SQLTask t=task.getSQLTask();
+				if(t!=null)
+					sqlbuf.put(t);
+			}
+			pending.decrementAndGet();
 			return null;
 		}
 		
 	}
 	
-	class SQLBuffer{
-		MyTask[] tsk;
-		int tsk_cnt=0;	
+	static class SQLBuffer{
 		final int TASKS=65536/4;
+		SQLTask[] tsk=new SQLTask[TASKS];
+		int tsk_cnt=0;	
 		
-		void put(String url,String name,String type,int id)
+		
+		void put(SQLTask t)
 		{
-			MyTask t=new MyTask(url,name,type,id);
-			
+			synchronized(this)
+			{
+				tsk[tsk_cnt]=t;
+				tsk_cnt++;
+				if(tsk_cnt==TASKS)
+				{
+					StringTask.pending_cnt.incrementAndGet();
+					pool.submit(new StringTask(tsk,tsk_cnt));
+					tsk_cnt=0;
+					tsk=new SQLTask[TASKS];
+				}
+			}
+		}
+		
+		void flush()
+		{
+			synchronized(this)
+			{
+				StringTask.pending_cnt.incrementAndGet();
+				pool.submit(new StringTask(tsk,tsk_cnt));	
+			}
 		}
 	}
 	
-	class MyTask2
+	static class LineTask
 	{
 		String url = null; 
 		String name,type;		
 		int id=0;
 		public AtomicInteger pending=new AtomicInteger(0);
-		public MyTask2(String u)
+		boolean gottask=false;
+		boolean ended=false;
+		
+		public LineTask(String u, int id2)
 		{
+			id=id2;
 			url=u;
 		}
 		void parse(String[] line)
@@ -198,6 +233,27 @@ public class FreeSQLBase {
 				type=line[2];
 			}
 		}	
+		
+		synchronized SQLTask getSQLTask()
+		{
+			if(!gottask)
+			{
+				gottask=true;
+				return new SQLTask(TrimURL(url),name,TrimURL(type),id);
+			}
+			else
+				return null;
+		}
+		void end()
+		{
+			ended=true;
+			if(pending.get()==0)
+			{
+				SQLTask t=getSQLTask();
+				if(t!=null)
+					sqlbuf.put(t);
+			}
+		}
 	}
 	
 	static class ReaderThread extends  Thread {
@@ -212,8 +268,7 @@ public class FreeSQLBase {
 			BufferedReader reader = new BufferedReader(new InputStreamReader(pis));
 			
 			String cururl=null;
-			MyTask2 curtsk=null;
-			int lastq=0;
+			LineTask curtsk=null;
 			for (;;) {
 				i++;
 				
@@ -222,9 +277,9 @@ public class FreeSQLBase {
 					line = reader.readLine();
 					if(line.isEmpty())
 					{
-						System.out.printf("Almost done, %d\n",tsk_cnt);
-						StringTask.pending_cnt.incrementAndGet();
-						pool.submit(new StringTask(tsk,tsk_cnt));
+						System.out.printf("Almost done\n");
+						sqlbuf.flush();
+						//statth.stop();
 						break;
 					}
 					String[] sp=line.split("\t");
@@ -237,13 +292,12 @@ public class FreeSQLBase {
 						}
 						else
 						{
-							curtsk=null;
+							curtsk.end();
 							cururl=sp[0];
 							id++;
 						}
-					}
-					if(curtsk==null)
-						curtsk=new MyTask2(sp[0],id);
+						curtsk=new LineTask(sp[0],id);
+					}						
 					curtsk.pending.incrementAndGet();
 					linepool.submit(new EntryTask(curtsk,sp));				
 				}
