@@ -68,10 +68,12 @@ public class FreeSQLBase {
 	
 	static private final class StringTask implements Callable<String> {
 		MyTask[] task;
+		int count;
 		static AtomicInteger cnt=new AtomicInteger(0);
 		static AtomicInteger pending_cnt=new AtomicInteger(0);
-		public StringTask(MyTask[] tsk)
+		public StringTask(MyTask[] tsk,int cnt)
 		{
+			count=cnt;
 			task=tsk;
 		}
 		public String call() {
@@ -80,14 +82,13 @@ public class FreeSQLBase {
 			try {
 				StringBuffer buf=new StringBuffer();
 				buf.append("INSERT INTO main VALUES (?,?,?,?,0)");
-				for(int i=1;i<task.length;i++)
+				for(int i=1;i<count;i++)
 				{
 					buf.append(",(?,?,?,?,0)");
 				}
 				stmt = con.prepareStatement(buf.toString());
-
-				
-				for(int i=0;i<task.length;i++)
+			
+				for(int i=0;i<count;i++)
 				{
 					stmt.setString(i*4+1, task[i].url);
 					stmt.setString(i*4+2, task[i].name);
@@ -96,9 +97,11 @@ public class FreeSQLBase {
 					task[i]=null;
 				}
 				task=null;
+				
 				stmt.executeUpdate();
 				cnt.incrementAndGet();
 				pending_cnt.decrementAndGet();
+
 			} catch (SQLException e) {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
@@ -117,7 +120,11 @@ public class FreeSQLBase {
 				} catch (InterruptedException e) {
 					// TODO Auto-generated catch block
 					e.printStackTrace();
+				} catch (ThreadDeath e)
+				{
+					
 				}
+			
 				System.out.printf("[stats] i = %d, tasksdone = %d, task_queued = %d\n",
 						readth.i,StringTask.cnt.get(),StringTask.pending_cnt.get());
 			}
@@ -161,6 +168,13 @@ public class FreeSQLBase {
 				String line = null;
 				try {
 					line = reader.readLine();
+					if(line.isEmpty())
+					{
+						System.out.printf("Almost done, %d\n",tsk_cnt);
+						StringTask.pending_cnt.incrementAndGet();
+						pool.submit(new StringTask(tsk,tsk_cnt));
+						break;
+					}
 					String[] sp=line.split("\t");
 					parse(sp);
 					if(!sp[0].equals(url))
@@ -190,7 +204,7 @@ public class FreeSQLBase {
 							if(tsk_cnt==TASKS)
 							{
 								StringTask.pending_cnt.incrementAndGet();
-								pool.submit(new StringTask(tsk));
+								pool.submit(new StringTask(tsk,tsk_cnt));
 								tsk_cnt=0;
 								tsk=new MyTask[TASKS];
 							}
@@ -203,24 +217,18 @@ public class FreeSQLBase {
 					parse(sp);
 					
 				}
-				catch (EOFException e)
-				{
-					System.out.println("Almost done");
-					pool.submit(new StringTask(tsk));
-					statth.stop();
-				}
 				catch (IOException e) {
 					// TODO Auto-generated catch block
 					e.printStackTrace();
 				}
 				
 			}
-/*			try {
+			try {
 				reader.close();
 			} catch (IOException e) {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
-			}*/
+			}
 		}
 	};
 	static ReaderThread readth = new ReaderThread();
@@ -229,7 +237,8 @@ public class FreeSQLBase {
 		// TODO Auto-generated method stub
 		try {
 			try {
-				
+				//create table main( url varchar(256), name varchar(60000), type varchar(128), id int(32), rank int(32));
+
 				Class.forName("com.mysql.jdbc.Driver").newInstance(); // MYSQL驱动
 				con = DriverManager.getConnection("jdbc:mysql://127.0.0.1:3306/master", "root", "thisismysql"); // 链接本地MYSQL
 				System.out.println("yes");
@@ -273,7 +282,7 @@ public class FreeSQLBase {
 		while ((count = gis.read(data, 0, 4096)) != -1) {
 			pos.write(data, 0, count);
 		}
-		//pos.write("\n".getBytes());
+		pos.write("\n".getBytes());
 		gis.close();
 	}
 }
