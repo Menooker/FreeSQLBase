@@ -265,7 +265,7 @@ public class FreeSQLBase {
 				if(tsk_cnt_et==TASKS)
 				{
 					StringTask.pending_cnt.incrementAndGet();
-					pool.submit(new StringTask(tsk_et,tsk_cnt_et,"enity_type"));
+					pool.submit(new StringTask(tsk_et,tsk_cnt_et,"entity_type"));
 					tsk_cnt_et=0;
 					tsk_et=new SQLTask[TASKS];
 				}
