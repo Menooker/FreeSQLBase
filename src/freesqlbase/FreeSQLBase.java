@@ -139,6 +139,7 @@ public class FreeSQLBase {
 			name=nme;
 		}
 		public String call() {
+			pending_cnt.decrementAndGet();
 			// Long operations
 			PreparedStatement stmt;
 			try {
@@ -163,7 +164,7 @@ public class FreeSQLBase {
 				stmt.executeUpdate();
 				stmt.close();
 				cnt.incrementAndGet();
-				pending_cnt.decrementAndGet();
+				
 				
 			} catch (SQLException e) {
 				// TODO Auto-generated catch block
