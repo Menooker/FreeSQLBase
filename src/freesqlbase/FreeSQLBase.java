@@ -314,9 +314,10 @@ public class FreeSQLBase {
 						//statth.stop();
 						break;
 					}
-					while(EntryTask.pending.get()>100000)
+					while(EntryTask.pending.get()>100000 
+							|| StringTask.pending_cnt.get()>150)
 					{
-						System.out.println("Queue too long, sleeping...");
+						//System.out.println("Queue too long, sleeping...");
 						try {
 							Thread.sleep(3000);
 						} catch (InterruptedException e) {
