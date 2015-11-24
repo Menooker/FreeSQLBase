@@ -188,9 +188,9 @@ public class FreeSQLBase {
 					
 				}
 			
-				System.out.printf("[stats] i = %d per = %f, tasksdone = %d, sql_queued = %d, line_queued = %d, hit_rate=%f\n",
+				System.out.printf("[stats] i = %d per = %f, tasksdone = %d, sql_queued = %d, line_queued = %d, hit_rate=%f, buf=%d\n",
 						readth.i,1.0*readth.i/3130753067l,StringTask.cnt.get(),StringTask.pending_cnt.get(),EntryTask.pending.get(),
-						1.0*sqlcache.hit/sqlcache.cnt);
+						1.0*sqlcache.hit/sqlcache.cnt,sqlbuf.tsk_cnt_te);
 				sqlcache.hit=0;
 				sqlcache.cnt=1;
 			}
@@ -219,11 +219,9 @@ public class FreeSQLBase {
 				else if(line[1].equals("<http://rdf.freebase.com/ns/type.property.expected_type>") 
 						|| line[1].equals("<http://rdf.freebase.com/ns/type.property.schema>"))
 				{
-					System.out.print("LLLLL");
 					id1=sqlcache.get(TrimURL(line[2]));
 					id2=sqlcache.get(TrimURL(line[0]));
 					sqlbuf.put_te(new SQLTask(id1,id2));	
-					System.out.println("ppppp");
 				}
 				
 			} catch (KeyNotFoundException e) {
