@@ -234,7 +234,7 @@ public class FreeSQLBase {
 	}
 	
 	static class SQLBuffer{
-		final int TASKS=65536/4;
+		final int TASKS=4096;
 		SQLTask[] tsk_et=new SQLTask[TASKS];
 		SQLTask[] tsk_te=new SQLTask[TASKS];
 		int tsk_cnt_et=0;
@@ -312,6 +312,16 @@ public class FreeSQLBase {
 						sqlbuf.flush();
 						//statth.stop();
 						break;
+					}
+					while(EntryTask.pending.get()>10000)
+					{
+						System.out.println("Queue too long, sleeping...");
+						try {
+							Thread.sleep(3000);
+						} catch (InterruptedException e) {
+							// TODO Auto-generated catch block
+							e.printStackTrace();
+						}
 					}
 					String[] sp=line.split("\t");
 					linepool.submit(new EntryTask(sp));				
