@@ -218,6 +218,7 @@ public class FreeSQLBase {
 				else if(line[1].equals("<http://rdf.freebase.com/ns/type.property.expected_type>") 
 						|| line[1].equals("<http://rdf.freebase.com/ns/type.property.schema>"))
 				{
+					System.out.println("LLLLL");
 					id1=sqlcache.get(TrimURL(line[2]));
 					id2=sqlcache.get(TrimURL(line[0]));
 					sqlbuf.put_te(new SQLTask(id1,id2));				
@@ -313,7 +314,7 @@ public class FreeSQLBase {
 						//statth.stop();
 						break;
 					}
-					/*while(EntryTask.pending.get()>10000)
+					while(EntryTask.pending.get()>100000)
 					{
 						System.out.println("Queue too long, sleeping...");
 						try {
@@ -322,7 +323,7 @@ public class FreeSQLBase {
 							// TODO Auto-generated catch block
 							e.printStackTrace();
 						}
-					}*/
+					}
 					String[] sp=line.split("\t");
 					linepool.submit(new EntryTask(sp));				
 				}
