@@ -218,7 +218,7 @@ public class FreeSQLBase {
 				else if(line[1].equals("<http://rdf.freebase.com/ns/type.property.expected_type>") 
 						|| line[1].equals("<http://rdf.freebase.com/ns/type.property.schema>"))
 				{
-					System.out.println("LLLLL");
+					//System.out.println("LLLLL");
 					id1=sqlcache.get(TrimURL(line[2]));
 					id2=sqlcache.get(TrimURL(line[0]));
 					sqlbuf.put_te(new SQLTask(id1,id2));				
