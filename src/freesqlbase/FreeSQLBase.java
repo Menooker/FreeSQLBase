@@ -235,7 +235,7 @@ public class FreeSQLBase {
 	}
 	
 	static class SQLBuffer{
-		final int TASKS=4096;
+		final int TASKS=16*16*1024;
 		SQLTask[] tsk_et=new SQLTask[TASKS];
 		SQLTask[] tsk_te=new SQLTask[TASKS];
 		int tsk_cnt_et=0;
@@ -315,7 +315,7 @@ public class FreeSQLBase {
 						break;
 					}
 					while(EntryTask.pending.get()>100000 
-							|| StringTask.pending_cnt.get()>150)
+							|| StringTask.pending_cnt.get()>80)
 					{
 						//System.out.println("Queue too long, sleeping...");
 						try {
