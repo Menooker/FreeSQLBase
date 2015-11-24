@@ -215,14 +215,6 @@ public class FreeSQLBase {
 		@Override
 		public String call() {
 			int id1,id2;
-			try {//////delete me!!!!!!!!!!
-				int ide=sqlcache.get(TrimURL(line[0]));
-				if(ide<=124519884)
-					return null;
-			} catch (KeyNotFoundException e1) {
-				// TODO Auto-generated catch block
-				e1.printStackTrace();
-			}
 			pending.decrementAndGet();
 			try {
 				if(line[1].equals("<http://rdf.freebase.com/ns/type.object.type>"))
@@ -321,7 +313,8 @@ public class FreeSQLBase {
 		@Override
 		public void run() {
 			BufferedReader reader = new BufferedReader(new InputStreamReader(pis));
-			
+			String last=null;
+			int id=-1;
 			for (;;) {
 				i++;
 				
@@ -335,6 +328,7 @@ public class FreeSQLBase {
 						//statth.stop();
 						break;
 					}
+					
 					while(EntryTask.pending.get()>500000 
 							|| StringTask.pending_cnt.get()>300)
 					{
@@ -347,6 +341,15 @@ public class FreeSQLBase {
 						}
 					}
 					String[] sp=line.split("\t");
+					///////////////////////////////////////////////
+					if(!sp[0].equals(last))
+					{
+						last=sp[0];
+						id++;
+					}
+					if(id<=124519884)
+						continue;
+					///////////////////////////////////////////////				
 					linepool.submit(new EntryTask(sp));				
 				}
 				catch (IOException e) {
