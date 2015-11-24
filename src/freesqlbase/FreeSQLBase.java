@@ -131,9 +131,12 @@ public class FreeSQLBase {
 		int count;
 		static AtomicInteger cnt=new AtomicInteger(0);
 		static AtomicInteger pending_cnt=new AtomicInteger(0);
+		static AtomicInteger interval_cnt=new AtomicInteger(0);
 		
 		public StringTask(SQLTask[] tsk,int cnt,String nme)
 		{
+			pending_cnt.incrementAndGet();
+			interval_cnt.incrementAndGet();
 			count=cnt;
 			task=tsk;
 			name=nme;
@@ -189,11 +192,12 @@ public class FreeSQLBase {
 					
 				}
 			
-				System.out.printf("[stats] i = %d per = %f, tasksdone = %d, sql_queued = %d, line_queued = %d, hit_rate=%f, buf=%d\n",
+				System.out.printf("[stats] i = %d per = %f, tasksdone = %d, sql_queued = %d, line_queued = %d, hit_rate=%f, buf=%d, sql_tasks=%d\n",
 						readth.i,1.0*readth.i/3130753067l,StringTask.cnt.get(),StringTask.pending_cnt.get(),EntryTask.pending.get(),
-						1.0*sqlcache.hit/sqlcache.cnt,sqlbuf.tsk_cnt_te);
+						1.0*sqlcache.hit/sqlcache.cnt,sqlbuf.tsk_cnt_te,StringTask.interval_cnt.get());
 				sqlcache.hit=0;
 				sqlcache.cnt=1;
+				StringTask.interval_cnt.set(0);
 			}
 		}
 	};
@@ -250,7 +254,6 @@ public class FreeSQLBase {
 				tsk_cnt_te++;
 				if(tsk_cnt_te==TASKS)
 				{
-					StringTask.pending_cnt.incrementAndGet();
 					pool.submit(new StringTask(tsk_te,tsk_cnt_te,"type_entity"));
 					tsk_cnt_te=0;
 					tsk_te=new SQLTask[TASKS];
@@ -266,7 +269,6 @@ public class FreeSQLBase {
 				tsk_cnt_et++;
 				if(tsk_cnt_et==TASKS)
 				{
-					StringTask.pending_cnt.incrementAndGet();
 					pool.submit(new StringTask(tsk_et,tsk_cnt_et,"entity_type"));
 					tsk_cnt_et=0;
 					tsk_et=new SQLTask[TASKS];
@@ -278,12 +280,10 @@ public class FreeSQLBase {
 		{
 			synchronized(tsk_te)
 			{
-				StringTask.pending_cnt.incrementAndGet();
 				pool.submit(new StringTask(tsk_te,tsk_cnt_te,"type_entity"));			
 			}
 			synchronized(tsk_et)
 			{
-				StringTask.pending_cnt.incrementAndGet();
 				pool.submit(new StringTask(tsk_et,tsk_cnt_et,"enity_type"));
 			}
 		}
@@ -316,7 +316,7 @@ public class FreeSQLBase {
 						break;
 					}
 					while(EntryTask.pending.get()>500000 
-							|| StringTask.pending_cnt.get()>80)
+							|| StringTask.pending_cnt.get()>300)
 					{
 						//System.out.println("Queue too long, sleeping...");
 						try {
