@@ -313,7 +313,7 @@ public class FreeSQLBase {
 						//statth.stop();
 						break;
 					}
-					while(EntryTask.pending.get()>10000)
+					/*while(EntryTask.pending.get()>10000)
 					{
 						System.out.println("Queue too long, sleeping...");
 						try {
@@ -322,7 +322,7 @@ public class FreeSQLBase {
 							// TODO Auto-generated catch block
 							e.printStackTrace();
 						}
-					}
+					}*/
 					String[] sp=line.split("\t");
 					linepool.submit(new EntryTask(sp));				
 				}
