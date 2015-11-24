@@ -314,12 +314,12 @@ public class FreeSQLBase {
 						//statth.stop();
 						break;
 					}
-					while(EntryTask.pending.get()>100000 
+					while(EntryTask.pending.get()>500000 
 							|| StringTask.pending_cnt.get()>80)
 					{
 						//System.out.println("Queue too long, sleeping...");
 						try {
-							Thread.sleep(1000);
+							Thread.sleep(100);
 						} catch (InterruptedException e) {
 							// TODO Auto-generated catch block
 							e.printStackTrace();
