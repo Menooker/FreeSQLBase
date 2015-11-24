@@ -314,7 +314,7 @@ public class FreeSQLBase {
 						//statth.stop();
 						break;
 					}
-					while(EntryTask.pending.get()>100000)
+					while(EntryTask.pending.get()>5000000)
 					{
 						System.out.println("Queue too long, sleeping...");
 						try {
