@@ -2,6 +2,7 @@ package freesqlbase;
 
 import java.io.*;
 import java.nio.ByteBuffer;
+import java.util.HashMap;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
@@ -47,7 +48,46 @@ public class FreeSQLBase {
 		return url.substring(url.lastIndexOf('/')+1,last);
 	}
 	
-	
+	static class SQLIdCache
+	{
+		final int SIZE=65536;
+		int[] cache=new int[SIZE];
+		SQLIdCache()
+		{
+			for(int i=0;i<SIZE;i++)
+			{
+				cache[i]=-1;
+			}
+		}
+		
+		int get(String s)
+		{
+			int i=s.hashCode()%SIZE;
+			if(cache[i]!=-1)
+				return cache[i];
+			else
+			{
+				int ret=-1;
+				PreparedStatement stmt = null;
+				try {
+					stmt=con.prepareStatement("select * from main where url=?");
+					stmt.setString(1, s);
+					ResultSet res = stmt.executeQuery();
+					if (res.next()) {
+						ret = res.getInt(1);
+					}
+					stmt.close();
+				} catch (SQLException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+				cache[i]=ret;
+				return ret;
+
+			}
+		}
+		
+	}
 	static class SQLTask
 	{
 		String name,type,url;		
