@@ -208,6 +208,7 @@ public class FreeSQLBase {
 		@Override
 		public String call() {
 			int id1,id2;
+			pending.decrementAndGet();
 			try {
 				if(line[1].equals("<http://rdf.freebase.com/ns/type.object.type>"))
 				{
@@ -228,7 +229,7 @@ public class FreeSQLBase {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
 			}
-			pending.decrementAndGet();
+			
 			return null;
 		}
 		
@@ -314,7 +315,7 @@ public class FreeSQLBase {
 						//statth.stop();
 						break;
 					}
-					while(EntryTask.pending.get()>5000000)
+					while(EntryTask.pending.get()>100000)
 					{
 						System.out.println("Queue too long, sleeping...");
 						try {
