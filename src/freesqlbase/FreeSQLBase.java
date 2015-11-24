@@ -22,7 +22,8 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
-
+//124519884
+//123893488
 public class FreeSQLBase {
 	static PipedOutputStream pos;
 	static PipedInputStream pis;
@@ -198,6 +199,7 @@ public class FreeSQLBase {
 				sqlcache.hit=0;
 				sqlcache.cnt=1;
 				StringTask.interval_cnt.set(0);
+				
 			}
 		}
 	};
@@ -213,6 +215,14 @@ public class FreeSQLBase {
 		@Override
 		public String call() {
 			int id1,id2;
+			try {//////delete me!!!!!!!!!!
+				int ide=sqlcache.get(TrimURL(line[0]));
+				if(ide<=124519884)
+					return null;
+			} catch (KeyNotFoundException e1) {
+				// TODO Auto-generated catch block
+				e1.printStackTrace();
+			}
 			pending.decrementAndGet();
 			try {
 				if(line[1].equals("<http://rdf.freebase.com/ns/type.object.type>"))
@@ -233,7 +243,11 @@ public class FreeSQLBase {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
 			}
-			
+			if(pending.get()<=0 && sqlbuf.readdone)
+			{
+				System.out.println("Flush buffer");
+				sqlbuf.flush();
+			}
 			return null;
 		}
 		
@@ -245,6 +259,7 @@ public class FreeSQLBase {
 		SQLTask[] tsk_te=new SQLTask[TASKS];
 		int tsk_cnt_et=0;
 		int tsk_cnt_te=0;
+		boolean readdone=false;
 		
 		void put_te(SQLTask t)
 		{
@@ -274,6 +289,11 @@ public class FreeSQLBase {
 					tsk_et=new SQLTask[TASKS];
 				}
 			}
+		}
+		
+		void done()
+		{
+			readdone=true;
 		}
 		
 		void flush()
@@ -311,7 +331,7 @@ public class FreeSQLBase {
 					if(line.isEmpty())
 					{
 						System.out.printf("Almost done\n");
-						sqlbuf.flush();
+						sqlbuf.done();
 						//statth.stop();
 						break;
 					}
