@@ -188,7 +188,7 @@ public class FreeSQLBase {
 					
 				}
 			
-				System.out.printf("[stats] i = %d % = %f, tasksdone = %d, sql_queued = %d, line_queued = %d, hit_rate=%f\n",
+				System.out.printf("[stats] i = %d per = %f, tasksdone = %d, sql_queued = %d, line_queued = %d, hit_rate=%f\n",
 						readth.i,1.0*readth.i/3130753067l,StringTask.cnt.get(),StringTask.pending_cnt.get(),EntryTask.pending.get(),
 						1.0*sqlcache.hit/sqlcache.cnt);
 				sqlcache.hit=0;
