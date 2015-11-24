@@ -99,7 +99,7 @@ public class FreeSQLBase {
 					stmt.setString(1, s);
 					ResultSet res = stmt.executeQuery();
 					if (res.next()) {
-						ret = res.getInt(1);
+						ret = res.getInt(4);
 					}
 					stmt.close();
 				} catch (SQLException e) {
