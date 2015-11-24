@@ -32,10 +32,14 @@ public class FreeSQLBase {
 	//static ThreadPoolExecutor pool = new ThreadPoolExecutor(4, 8, 3, TimeUnit.SECONDS, new ArrayBlockingQueue<Runnable>(200),
     //        new ThreadPoolExecutor.AbortPolicy());
 	static SQLBuffer sqlbuf=new SQLBuffer();
+	static SQLIdCache sqlcache=new SQLIdCache();
+	
 	static String TrimURL(String url)
 	{
 		if(url==null)
 			return null;
+		if(!url.startsWith("<http"))
+			return url;
 		int last;
 		if(url.charAt(url.length()-1)=='>')
 		{
@@ -48,10 +52,27 @@ public class FreeSQLBase {
 		return url.substring(url.lastIndexOf('/')+1,last);
 	}
 	
+	static class KeyNotFoundException extends Exception
+	{
+
+		public KeyNotFoundException(String s) {
+			super("SQL URL Not found: "+s);
+			// TODO Auto-generated constructor stub
+		}
+
+		/**
+		 * 
+		 */
+		private static final long serialVersionUID = 433079364893439203L;
+		
+	}
+	
 	static class SQLIdCache
 	{
 		final int SIZE=65536;
 		int[] cache=new int[SIZE];
+		long hit=0;
+		long cnt=1;
 		SQLIdCache()
 		{
 			for(int i=0;i<SIZE;i++)
@@ -60,11 +81,15 @@ public class FreeSQLBase {
 			}
 		}
 		
-		int get(String s)
+		int get(String s) throws KeyNotFoundException
 		{
 			int i=s.hashCode()%SIZE;
+			cnt++;
 			if(cache[i]!=-1)
+			{
+				hit++;
 				return cache[i];
+			}
 			else
 			{
 				int ret=-1;
@@ -82,6 +107,8 @@ public class FreeSQLBase {
 					e.printStackTrace();
 				}
 				cache[i]=ret;
+				if(ret==-1)
+					throw new KeyNotFoundException(s);
 				return ret;
 
 			}
@@ -89,64 +116,46 @@ public class FreeSQLBase {
 		
 	}
 	static class SQLTask
-	{
-		String name,type,url;		
-		int id;
-		public SQLTask(String url,String name,String type,int id)
+	{		
+		int id1,id2;
+		public SQLTask(int i1,int i2)
 		{
-			if(url!=null && url.length()>256)
-			{
-				System.out.printf("url %s too long\n",url);
-				url=url.substring(0, 256);
-			}
-			if(name!=null && name.length()>60000)
-			{
-				System.out.printf("name %s too long\n",name);
-				name=name.substring(0, 256);
-			}
-			if(type!=null && type.length()>128)
-			{
-				System.out.printf("type %s too long\n",type);
-				type=type.substring(0, 128);	
-			}
-			
-			this.url=url;
-			this.name=name;
-			this.type=type;
-			this.id=id;
-		
+			id1=i1;
+			id2=i2;
 		}
 	}
 	
 	static private final class StringTask implements Callable<String> {
 		SQLTask[] task;
+		String name;
 		int count;
 		static AtomicInteger cnt=new AtomicInteger(0);
 		static AtomicInteger pending_cnt=new AtomicInteger(0);
 		
-		public StringTask(SQLTask[] tsk,int cnt)
+		public StringTask(SQLTask[] tsk,int cnt,String nme)
 		{
 			count=cnt;
 			task=tsk;
+			name=nme;
 		}
 		public String call() {
 			// Long operations
 			PreparedStatement stmt;
 			try {
 				StringBuffer buf=new StringBuffer();
-				buf.append("INSERT INTO main2 VALUES (?,?,?,?,0)");
+				buf.append("INSERT INTO ");
+				buf.append(name);
+				buf.append(" VALUES (?,?)");
 				for(int i=1;i<count;i++)
 				{
-					buf.append(",(?,?,?,?,0)");
+					buf.append(",(?,?)");
 				}
 				stmt = con.prepareStatement(buf.toString());
 			
 				for(int i=0;i<count;i++)
 				{
-					stmt.setString(i*4+1, task[i].url);
-					stmt.setString(i*4+2, task[i].name);
-					stmt.setString(i*4+3, task[i].type);
-					stmt.setInt(i*4+4, task[i].id);
+					stmt.setInt(i*2+1, task[i].id1);
+					stmt.setInt(i*2+2, task[i].id2);
 					task[i]=null;
 				}
 				task=null;
@@ -179,31 +188,44 @@ public class FreeSQLBase {
 					
 				}
 			
-				System.out.printf("[stats] i = %d, tasksdone = %d, sql_queued = %d, line_queued = %d\n",
-						readth.i,StringTask.cnt.get(),StringTask.pending_cnt.get(),EntryTask.pending.get());
+				System.out.printf("[stats] i = %d % = %f, tasksdone = %d, sql_queued = %d, line_queued = %d, hit_rate=%f\n",
+						readth.i,1.0*readth.i/3130753067l,StringTask.cnt.get(),StringTask.pending_cnt.get(),EntryTask.pending.get(),
+						1.0*sqlcache.hit/sqlcache.cnt);
+				sqlcache.hit=0;
+				sqlcache.cnt=1;
 			}
 		}
 	};
 	
 	
 	static private final class EntryTask implements Callable<String> {
-		LineTask task;
 		String[] line;
 		static AtomicInteger pending=new AtomicInteger(0);
-		public EntryTask(LineTask tsk,String[] lne){
-			task=tsk;
+		public EntryTask(String[] lne){
 			line=lne;
 			pending.incrementAndGet();
 		}
 		@Override
 		public String call() {
-			task.parse(line);
-			task.pending.decrementAndGet();
-			if(task.ended && task.pending.get()==0)
-			{
-				SQLTask t=task.getSQLTask();
-				if(t!=null)
-					sqlbuf.put(t);
+			int id1,id2;
+			try {
+				if(line[1].equals("<http://rdf.freebase.com/ns/type.object.type>"))
+				{
+					id1=sqlcache.get(TrimURL(line[0]));
+					id2=sqlcache.get(TrimURL(line[2]));
+					sqlbuf.put_et(new SQLTask(id1,id2));
+				}
+				else if(line[1].equals("<http://rdf.freebase.com/ns/type.property.expected_type>") 
+						|| line[1].equals("<http://rdf.freebase.com/ns/type.property.schema>"))
+				{
+					id1=sqlcache.get(TrimURL(line[2]));
+					id2=sqlcache.get(TrimURL(line[0]));
+					sqlbuf.put_te(new SQLTask(id1,id2));				
+				}
+				
+			} catch (KeyNotFoundException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
 			}
 			pending.decrementAndGet();
 			return null;
@@ -213,88 +235,59 @@ public class FreeSQLBase {
 	
 	static class SQLBuffer{
 		final int TASKS=65536/4;
-		SQLTask[] tsk=new SQLTask[TASKS];
-		int tsk_cnt=0;	
+		SQLTask[] tsk_et=new SQLTask[TASKS];
+		SQLTask[] tsk_te=new SQLTask[TASKS];
+		int tsk_cnt_et=0;
+		int tsk_cnt_te=0;
 		
-		
-		void put(SQLTask t)
+		void put_te(SQLTask t)
 		{
-			synchronized(this)
+			synchronized(tsk_te)
 			{
-				tsk[tsk_cnt]=t;
-				tsk_cnt++;
-				if(tsk_cnt==TASKS)
+				tsk_te[tsk_cnt_te]=t;
+				tsk_cnt_te++;
+				if(tsk_cnt_te==TASKS)
 				{
 					StringTask.pending_cnt.incrementAndGet();
-					pool.submit(new StringTask(tsk,tsk_cnt));
-					tsk_cnt=0;
-					tsk=new SQLTask[TASKS];
+					pool.submit(new StringTask(tsk_te,tsk_cnt_te,"type_entity"));
+					tsk_cnt_te=0;
+					tsk_te=new SQLTask[TASKS];
+				}
+			}
+		}
+		
+		void put_et(SQLTask t)
+		{
+			synchronized(tsk_et)
+			{
+				tsk_et[tsk_cnt_et]=t;
+				tsk_cnt_et++;
+				if(tsk_cnt_et==TASKS)
+				{
+					StringTask.pending_cnt.incrementAndGet();
+					pool.submit(new StringTask(tsk_et,tsk_cnt_et,"enity_type"));
+					tsk_cnt_et=0;
+					tsk_et=new SQLTask[TASKS];
 				}
 			}
 		}
 		
 		void flush()
 		{
-			synchronized(this)
+			synchronized(tsk_te)
 			{
 				StringTask.pending_cnt.incrementAndGet();
-				pool.submit(new StringTask(tsk,tsk_cnt));	
+				pool.submit(new StringTask(tsk_te,tsk_cnt_te,"type_entity"));			
+			}
+			synchronized(tsk_et)
+			{
+				StringTask.pending_cnt.incrementAndGet();
+				pool.submit(new StringTask(tsk_et,tsk_cnt_et,"enity_type"));
 			}
 		}
 	}
 	
-	static class LineTask
-	{
-		String url = null; 
-		String name,type;		
-		int id=0;
-		public AtomicInteger pending=new AtomicInteger(0);
-		boolean gottask=false;
-		boolean ended=false;
-		
-		public LineTask(String u, int id2)
-		{
-			id=id2;
-			url=u;
-		}
-		void parse(String[] line)
-		{
-			
-			//System.out.println("1111");
-			if(line[1].equals("<http://rdf.freebase.com/ns/type.object.name>"))
-			{
-				if(line[2].endsWith("\"@en"))
-				{
-					name=line[2].substring(1, line[2].length()-4);
-				}
-			}
-			else if(line[1].equals("<http://rdf.freebase.com/ns/type.object.type>"))
-			{
-				type=line[2];
-			}
-		}	
-		
-		synchronized SQLTask getSQLTask()
-		{
-			if(!gottask)
-			{
-				gottask=true;
-				return new SQLTask(TrimURL(url),name,TrimURL(type),id);
-			}
-			else
-				return null;
-		}
-		void end()
-		{
-			ended=true;
-			if(pending.get()==0)
-			{
-				SQLTask t=getSQLTask();
-				if(t!=null)
-					sqlbuf.put(t);
-			}
-		}
-	}
+
 	
 	static class ReaderThread extends  Thread {
 
@@ -307,8 +300,6 @@ public class FreeSQLBase {
 		public void run() {
 			BufferedReader reader = new BufferedReader(new InputStreamReader(pis));
 			
-			String cururl=null;
-			LineTask curtsk=null;
 			for (;;) {
 				i++;
 				
@@ -323,23 +314,7 @@ public class FreeSQLBase {
 						break;
 					}
 					String[] sp=line.split("\t");
-
-					if(!sp[0].equals(cururl))
-					{
-						if(cururl==null)
-						{
-							cururl=sp[0];
-						}
-						else
-						{
-							curtsk.end();
-							cururl=sp[0];
-							id++;
-						}
-						curtsk=new LineTask(sp[0],id);
-					}						
-					curtsk.pending.incrementAndGet();
-					linepool.submit(new EntryTask(curtsk,sp));				
+					linepool.submit(new EntryTask(sp));				
 				}
 				catch (IOException e) {
 					// TODO Auto-generated catch block
