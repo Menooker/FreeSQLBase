@@ -460,8 +460,6 @@ public class FreeSQLBase {
 				//create table other(e_id int(32), t_id int(32), primary key(e_id,t_id));
 				//2*Maxint-1164214229=3130753067
 				
-				String a= "<http://rdf.freebase.com/ns/m.0x2spfl>";
-				System.out.print();
 				Class.forName("com.mysql.jdbc.Driver").newInstance(); // MYSQL驱动
 				con = DriverManager.getConnection("jdbc:mysql://127.0.0.1:3306/master", "root", "thisismysql"); // 链接本地MYSQL
 				System.out.println("yes");
@@ -483,7 +481,7 @@ public class FreeSQLBase {
 
 			pos = new PipedOutputStream(); pis = new PipedInputStream(pos);
 			FileInputStream s = new FileInputStream(
-					new File("/home/menooker/freebase.gz")); 
+					new File("/home/freebase.gz")); 
 			readth.start();
 			statth.start();
 			decompress(s);
