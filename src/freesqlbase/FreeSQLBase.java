@@ -29,7 +29,7 @@ public class FreeSQLBase {
 	static PipedInputStream pis;
 	static Connection con = null; // 定义一个MYSQL链接对象
 	static ExecutorService pool = Executors.newFixedThreadPool(2);
-	static ExecutorService linepool = Executors.newFixedThreadPool(4);
+	static ExecutorService linepool = Executors.newFixedThreadPool(16);
 	//static ThreadPoolExecutor pool = new ThreadPoolExecutor(4, 8, 3, TimeUnit.SECONDS, new ArrayBlockingQueue<Runnable>(200),
     //        new ThreadPoolExecutor.AbortPolicy());
 	static SQLBuffer sqlbuf=new SQLBuffer();
@@ -72,65 +72,69 @@ public class FreeSQLBase {
 	{
 		final int SIZE=1024*1024;
 		int[] cache=new int[SIZE];
+		Object[] sync=new Object[SIZE];
+		String[] strs=new String[SIZE];
 		long hit=0;
 		long cnt=1;
 		SQLIdCache()
 		{
 			for(int i=0;i<SIZE;i++)
 			{
+				sync[i]=new Object();
 				cache[i]=-1;
 			}
 		}
 		
-		synchronized int get(String s) throws KeyNotFoundException
-		{
-			try
+		int get(String s) throws KeyNotFoundException {
+			// try
+			// {
+			int i = s.hashCode();
+			if (i < 0)
+				i = -i;
+			i = i % SIZE;
+			cnt++;
+			synchronized (sync[i])
 			{
-				int i=s.hashCode();
-				if(i<0)
-					i=-i;
-				i=i % SIZE;
-				cnt++;
-
-				if(cache[i]!=-1)
-				{
+				if (cache[i] != -1 && strs[i].equals(s)) {
 					hit++;
 					return cache[i];
-				}
-				else
-				{
-					int ret=-1;
+				} else {
+					int ret = -1;
 					PreparedStatement stmt = null;
 					try {
-						stmt=con.prepareStatement("select * from main where url=?");
+						stmt = con.prepareStatement("select id from main where url=?");
 						stmt.setString(1, s);
 						ResultSet res = stmt.executeQuery();
 						if (res.next()) {
-							ret = res.getInt(4);
+							ret = res.getInt(1);
 						}
 					} catch (SQLException e) {
 						// TODO Auto-generated catch block
 						e.printStackTrace();
+					} finally {
+						if (stmt != null) {
+							try {
+								stmt.close();
+							} catch (SQLException e) {
+								// TODO Auto-generated catch block
+								e.printStackTrace();
+							}
+						}
 					}
-					finally
-					{
-						if(stmt!=null)
-							stmt.close();
-					}
-					cache[i]=ret;
-					if(ret==-1)
+					if (ret == -1)
 						throw new KeyNotFoundException(s);
+					strs[i]=s;
+					cache[i] = ret;
 					return ret;
-	
+
 				}
 			}
-			catch (Exception e)
-			{
-				e.printStackTrace();
-				throw new KeyNotFoundException(s);
-			}
+			/*
+			 * } catch (Exception e) { //e.printStackTrace(); throw new
+			 * KeyNotFoundException(s); }
+			 */
 		}
-		
+
 	}
 	static class SQLTask
 	{		
@@ -141,51 +145,36 @@ public class FreeSQLBase {
 			id2=i2;
 		}
 	}
-	
+	static class SQLTask2
+	{		
+		int id;
+		String str; 
+		public SQLTask2(int i,String s)
+		{
+			id=i;
+			str=s;;
+		}
+	}
 	static private final class StringTask implements Callable<String> {
-		SQLTask[] task;
-		String name;
-		int count;
+		PreparedStatement stmt;
 		static AtomicInteger cnt=new AtomicInteger(0);
 		static AtomicInteger pending_cnt=new AtomicInteger(0);
 		static AtomicInteger interval_cnt=new AtomicInteger(0);
 		
-		public StringTask(SQLTask[] tsk,int cnt,String nme)
+		public StringTask(PreparedStatement s)
 		{
 			pending_cnt.incrementAndGet();
 			interval_cnt.incrementAndGet();
-			count=cnt;
-			task=tsk;
-			name=nme;
+			stmt=s;
 		}
 		public String call() {
 			
 			// Long operations
-			PreparedStatement stmt=null;
 			try {
-				StringBuffer buf=new StringBuffer();
-				buf.append("INSERT INTO ");
-				buf.append(name);
-				buf.append(" VALUES (?,?)");
-				for(int i=1;i<count;i++)
-				{
-					buf.append(",(?,?)");
-				}
-				stmt = con.prepareStatement(buf.toString());
-			
-				for(int i=0;i<count;i++)
-				{
-					stmt.setInt(i*2+1, task[i].id1);
-					stmt.setInt(i*2+2, task[i].id2);
-					task[i]=null;
-				}
-				task=null;
-				
+				if(stmt==null)
+					return null;
 				stmt.executeUpdate();
-				
 				cnt.incrementAndGet();
-				
-				
 			} catch (SQLException e) {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
@@ -263,10 +252,23 @@ public class FreeSQLBase {
 				}
 				else if(line[0].startsWith("<http://rdf.freebase.com/ns/") && line[0].charAt(29)=='.')
 				{//if it is an entity
-					if(id_from_2==-1)
-						id_from_2=sqlcache.get(TrimURL(line[2]));
-					if(id<=id_from_2)
-						sqlbuf.put_other(new SQLTask(id,id_from_2));
+					
+					try{
+						if(line[2].startsWith("<http"))
+						{
+							
+							id_from_2 = sqlcache.get(TrimURL(line[2]));
+							if (id <= id_from_2)
+								sqlbuf.put_other(new SQLTask(id, id_from_2));		
+						}
+						else
+							sqlbuf.put_str(new SQLTask2(id, TrimURL(line[2])));
+					}
+					catch (KeyNotFoundException e)
+					{
+						sqlbuf.put_str(new SQLTask2(id, TrimURL(line[2])));
+					}
+
 				}
 				
 			} catch (KeyNotFoundException e) {
@@ -292,11 +294,83 @@ public class FreeSQLBase {
 		SQLTask[] tsk_et=new SQLTask[TASKS];
 		SQLTask[] tsk_te=new SQLTask[TASKS];
 		SQLTask[] tsk_other=new SQLTask[TASKS];
+		SQLTask2[] tsk_str=new SQLTask2[TASKS];
+		
 		int tsk_cnt_et=0;
 		int tsk_cnt_te=0;
 		int tsk_cnt_other=0;
+		int tsk_cnt_str=0;
 		boolean readdone=false;
 
+		PreparedStatement getStmt2(SQLTask2[] task,int count)
+		{
+			PreparedStatement stmt=null;
+			try {
+				StringBuffer buf=new StringBuffer();
+				buf.append("INSERT INTO strings  VALUES (?,?)");
+				for(int i=1;i<count;i++)
+				{
+					buf.append(",(?,?)");
+				}
+				stmt = con.prepareStatement(buf.toString());
+			
+				for(int i=0;i<count;i++)
+				{
+					stmt.setInt(i*2+1, task[i].id);
+					stmt.setString(i*2+2, task[i].str);
+				}
+				
+			} catch (SQLException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}		
+			return stmt;
+		}		
+		
+		PreparedStatement getStmt(SQLTask[] task,int count,String name)
+		{
+			PreparedStatement stmt=null;
+			try {
+				StringBuffer buf=new StringBuffer();
+				buf.append("INSERT INTO ");
+				buf.append(name);
+				buf.append(" VALUES (?,?)");
+				for(int i=1;i<count;i++)
+				{
+					buf.append(",(?,?)");
+				}
+				stmt = con.prepareStatement(buf.toString());
+			
+				for(int i=0;i<count;i++)
+				{
+					stmt.setInt(i*2+1, task[i].id1);
+					stmt.setInt(i*2+2, task[i].id2);
+				}
+				
+			} catch (SQLException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}		
+			return stmt;
+		}
+		
+		void put_str(SQLTask2 t)
+		{
+			synchronized(tsk_str)
+			{
+				tsk_str[tsk_cnt_str]=t;
+				tsk_cnt_str++;
+				if(tsk_cnt_str==TASKS)
+				{
+					
+					pool.submit(new StringTask(getStmt2(tsk_str,tsk_cnt_str)));
+					tsk_cnt_str=0;
+					tsk_str=new SQLTask2[TASKS];
+				}
+			}
+		}
+		
+		
 		void put_other(SQLTask t)
 		{
 			synchronized(tsk_other)
@@ -305,7 +379,8 @@ public class FreeSQLBase {
 				tsk_cnt_other++;
 				if(tsk_cnt_other==TASKS)
 				{
-					pool.submit(new StringTask(tsk_other,tsk_cnt_other,"other"));
+					
+					pool.submit(new StringTask(getStmt(tsk_other,tsk_cnt_other,"other")));
 					tsk_cnt_other=0;
 					tsk_other=new SQLTask[TASKS];
 				}
@@ -320,7 +395,7 @@ public class FreeSQLBase {
 				tsk_cnt_te++;
 				if(tsk_cnt_te==TASKS)
 				{
-					pool.submit(new StringTask(tsk_te,tsk_cnt_te,"type_entity"));
+					pool.submit(new StringTask(getStmt(tsk_te,tsk_cnt_te,"type_entity")));
 					tsk_cnt_te=0;
 					tsk_te=new SQLTask[TASKS];
 				}
@@ -335,7 +410,7 @@ public class FreeSQLBase {
 				tsk_cnt_et++;
 				if(tsk_cnt_et==TASKS)
 				{
-					pool.submit(new StringTask(tsk_et,tsk_cnt_et,"entity_type"));
+					pool.submit(new StringTask(getStmt(tsk_et,tsk_cnt_et,"entity_type")));
 					tsk_cnt_et=0;
 					tsk_et=new SQLTask[TASKS];
 				}
@@ -349,12 +424,12 @@ public class FreeSQLBase {
 		
 		void flush()
 		{
-			System.out.printf("flush %d %d %d\n",tsk_cnt_te,tsk_cnt_et,tsk_cnt_other);
+			System.out.printf("flush %d %d %d %d\n",tsk_cnt_te,tsk_cnt_et,tsk_cnt_other,tsk_cnt_str);
 			synchronized(tsk_te)
 			{
 				if(tsk_cnt_te!=0)
 				{
-					pool.submit(new StringTask(tsk_te,tsk_cnt_te,"type_entity"));	
+					pool.submit(new StringTask(getStmt(tsk_te,tsk_cnt_te,"type_entity")));	
 					tsk_cnt_te=0;
 					tsk_te=null;
 				}
@@ -363,7 +438,7 @@ public class FreeSQLBase {
 			{
 				if(tsk_cnt_et!=0)
 				{
-					pool.submit(new StringTask(tsk_et,tsk_cnt_et,"entity_type"));
+					pool.submit(new StringTask(getStmt(tsk_et,tsk_cnt_et,"entity_type")));
 					tsk_cnt_et=0;
 					tsk_et=null;
 				}
@@ -372,9 +447,18 @@ public class FreeSQLBase {
 			{
 				if(tsk_cnt_other!=0)
 				{
-					pool.submit(new StringTask(tsk_other,tsk_cnt_other,"other"));
+					pool.submit(new StringTask(getStmt(tsk_other,tsk_cnt_other,"other")));
 					tsk_cnt_other=0;
 					tsk_other=null;
+				}
+			}
+			synchronized(tsk_str)
+			{
+				if(tsk_cnt_str!=0)
+				{
+					pool.submit(new StringTask(getStmt2(tsk_str,tsk_cnt_str)));
+					tsk_cnt_str=0;
+					tsk_str=null;
 				}
 			}
 		}
