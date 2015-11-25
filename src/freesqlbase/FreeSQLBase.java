@@ -70,7 +70,7 @@ public class FreeSQLBase {
 	
 	static class SQLIdCache
 	{
-		final int SIZE=65536;
+		final int SIZE=1024*1024;
 		int[] cache=new int[SIZE];
 		long hit=0;
 		long cnt=1;
@@ -82,36 +82,48 @@ public class FreeSQLBase {
 			}
 		}
 		
-		int get(String s) throws KeyNotFoundException
+		synchronized int get(String s) throws KeyNotFoundException
 		{
-			int i=s.hashCode()%SIZE;
-			cnt++;
-			if(cache[i]!=-1)
+			try
 			{
-				hit++;
-				return cache[i];
-			}
-			else
-			{
-				int ret=-1;
-				PreparedStatement stmt = null;
-				try {
-					stmt=con.prepareStatement("select * from main where url=?");
-					stmt.setString(1, s);
-					ResultSet res = stmt.executeQuery();
-					if (res.next()) {
-						ret = res.getInt(4);
-					}
-					stmt.close();
-				} catch (SQLException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
-				}
-				cache[i]=ret;
-				if(ret==-1)
-					throw new KeyNotFoundException(s);
-				return ret;
+				int i=s.hashCode();
+				if(i<0)
+					i=-i;
+				i=i % SIZE;
+				cnt++;
 
+				if(cache[i]!=-1)
+				{
+					hit++;
+					return cache[i];
+				}
+				else
+				{
+					int ret=-1;
+					PreparedStatement stmt = null;
+					try {
+						stmt=con.prepareStatement("select * from main where url=?");
+						stmt.setString(1, s);
+						ResultSet res = stmt.executeQuery();
+						if (res.next()) {
+							ret = res.getInt(4);
+						}
+						stmt.close();
+					} catch (SQLException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					}
+					cache[i]=ret;
+					if(ret==-1)
+						throw new KeyNotFoundException(s);
+					return ret;
+	
+				}
+			}
+			catch (Exception e)
+			{
+				e.printStackTrace();
+				throw new KeyNotFoundException(s);
 			}
 		}
 		
@@ -143,7 +155,7 @@ public class FreeSQLBase {
 			name=nme;
 		}
 		public String call() {
-			pending_cnt.decrementAndGet();
+			
 			// Long operations
 			PreparedStatement stmt;
 			try {
@@ -174,6 +186,9 @@ public class FreeSQLBase {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
 			}		
+			finally{
+				pending_cnt.decrementAndGet();
+			}
 			return null;
 		}
 	}
@@ -207,33 +222,49 @@ public class FreeSQLBase {
 	
 	static private final class EntryTask implements Callable<String> {
 		String[] line;
+		int id;
 		static AtomicInteger pending=new AtomicInteger(0);
-		public EntryTask(String[] lne){
+		public EntryTask(String[] lne,int i){
 			line=lne;
+			id=i;
 			pending.incrementAndGet();
 		}
 		@Override
 		public String call() {
 			int id1,id2;
-			pending.decrementAndGet();
+			int id_from_2=-1;
 			try {
 				if(line[1].equals("<http://rdf.freebase.com/ns/type.object.type>"))
 				{
-					id1=sqlcache.get(TrimURL(line[0]));
+					id1=id;
 					id2=sqlcache.get(TrimURL(line[2]));
+					id_from_2=id2;
 					sqlbuf.put_et(new SQLTask(id1,id2));
+					
 				}
 				else if(line[1].equals("<http://rdf.freebase.com/ns/type.property.expected_type>") 
 						|| line[1].equals("<http://rdf.freebase.com/ns/type.property.schema>"))
 				{
 					id1=sqlcache.get(TrimURL(line[2]));
-					id2=sqlcache.get(TrimURL(line[0]));
+					id2=id;
+					id_from_2=id1;
 					sqlbuf.put_te(new SQLTask(id1,id2));	
+				}
+				else if(line[0].startsWith("<http://rdf.freebase.com/ns/") && line[0].charAt(29)=='.')
+				{//if it is an entity
+					if(id_from_2==-1)
+						id_from_2=sqlcache.get(TrimURL(line[2]));
+					if(id<=id_from_2)
+						sqlbuf.put_other(new SQLTask(id,id_from_2));
 				}
 				
 			} catch (KeyNotFoundException e) {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
+			}
+			finally
+			{
+				pending.decrementAndGet();
 			}
 			if(pending.get()<=0 && sqlbuf.readdone)
 			{
@@ -249,9 +280,26 @@ public class FreeSQLBase {
 		final int TASKS=16*1024;
 		SQLTask[] tsk_et=new SQLTask[TASKS];
 		SQLTask[] tsk_te=new SQLTask[TASKS];
+		SQLTask[] tsk_other=new SQLTask[TASKS];
 		int tsk_cnt_et=0;
 		int tsk_cnt_te=0;
+		int tsk_cnt_other=0;
 		boolean readdone=false;
+
+		void put_other(SQLTask t)
+		{
+			synchronized(tsk_other)
+			{
+				tsk_other[tsk_cnt_other]=t;
+				tsk_cnt_other++;
+				if(tsk_cnt_other==TASKS)
+				{
+					pool.submit(new StringTask(tsk_other,tsk_cnt_other,"other"));
+					tsk_cnt_other=0;
+					tsk_other=new SQLTask[TASKS];
+				}
+			}
+		}
 		
 		void put_te(SQLTask t)
 		{
@@ -290,13 +338,33 @@ public class FreeSQLBase {
 		
 		void flush()
 		{
+			System.out.printf("flush %d %d %d\n",tsk_cnt_te,tsk_cnt_et,tsk_cnt_other);
 			synchronized(tsk_te)
 			{
-				pool.submit(new StringTask(tsk_te,tsk_cnt_te,"type_entity"));			
+				if(tsk_cnt_te!=0)
+				{
+					pool.submit(new StringTask(tsk_te,tsk_cnt_te,"type_entity"));	
+					tsk_cnt_te=0;
+					tsk_te=null;
+				}
 			}
 			synchronized(tsk_et)
 			{
-				pool.submit(new StringTask(tsk_et,tsk_cnt_et,"enity_type"));
+				if(tsk_cnt_et!=0)
+				{
+					pool.submit(new StringTask(tsk_et,tsk_cnt_et,"entity_type"));
+					tsk_cnt_et=0;
+					tsk_et=null;
+				}
+			}
+			synchronized(tsk_other)
+			{
+				if(tsk_cnt_other!=0)
+				{
+					pool.submit(new StringTask(tsk_other,tsk_cnt_other,"other"));
+					tsk_cnt_other=0;
+					tsk_other=null;
+				}
 			}
 		}
 	}
@@ -325,6 +393,11 @@ public class FreeSQLBase {
 					{
 						System.out.printf("Almost done\n");
 						sqlbuf.done();
+						if(EntryTask.pending.get()==0)
+						{
+							System.out.println("Main thread Flush");
+							sqlbuf.flush();
+						}
 						//statth.stop();
 						break;
 					}
@@ -334,7 +407,7 @@ public class FreeSQLBase {
 					{
 						//System.out.println("Queue too long, sleeping...");
 						try {
-							Thread.sleep(100);
+							Thread.sleep(500);
 						} catch (InterruptedException e) {
 							// TODO Auto-generated catch block
 							e.printStackTrace();
@@ -347,10 +420,10 @@ public class FreeSQLBase {
 						last=sp[0];
 						id++;
 					}
-					if(id<=124519884)
-						continue;
+					//if(id<=124519884)
+					//	continue;
 					///////////////////////////////////////////////				
-					linepool.submit(new EntryTask(sp));				
+					linepool.submit(new EntryTask(sp,id));				
 				}
 				catch (IOException e) {
 					// TODO Auto-generated catch block
@@ -373,6 +446,7 @@ public class FreeSQLBase {
 		try {
 			try {
 				//create table main( url varchar(256), name varchar(60000), type varchar(128), id int(32) primary key, rank int(32));
+				//create table other(e_id int(32), t_id int(32), primary key(e_id,t_id));
 				//2*Maxint-1164214229=3130753067
 				Class.forName("com.mysql.jdbc.Driver").newInstance(); // MYSQL驱动
 				con = DriverManager.getConnection("jdbc:mysql://127.0.0.1:3306/master", "root", "thisismysql"); // 链接本地MYSQL
@@ -395,7 +469,7 @@ public class FreeSQLBase {
 
 			pos = new PipedOutputStream(); pis = new PipedInputStream(pos);
 			FileInputStream s = new FileInputStream(
-					new File("/home/freebase.gz")); 
+					new File("/home/menooker/freebase.gz")); 
 			readth.start();
 			statth.start();
 			decompress(s);
