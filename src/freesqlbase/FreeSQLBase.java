@@ -108,10 +108,14 @@ public class FreeSQLBase {
 						if (res.next()) {
 							ret = res.getInt(4);
 						}
-						stmt.close();
 					} catch (SQLException e) {
 						// TODO Auto-generated catch block
 						e.printStackTrace();
+					}
+					finally
+					{
+						if(stmt!=null)
+							stmt.close();
 					}
 					cache[i]=ret;
 					if(ret==-1)
@@ -157,7 +161,7 @@ public class FreeSQLBase {
 		public String call() {
 			
 			// Long operations
-			PreparedStatement stmt;
+			PreparedStatement stmt=null;
 			try {
 				StringBuffer buf=new StringBuffer();
 				buf.append("INSERT INTO ");
@@ -178,7 +182,7 @@ public class FreeSQLBase {
 				task=null;
 				
 				stmt.executeUpdate();
-				stmt.close();
+				
 				cnt.incrementAndGet();
 				
 				
@@ -187,6 +191,13 @@ public class FreeSQLBase {
 				e.printStackTrace();
 			}		
 			finally{
+				try {
+					if(stmt!=null)
+						stmt.close();
+				} catch (SQLException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
 				pending_cnt.decrementAndGet();
 			}
 			return null;
@@ -448,6 +459,9 @@ public class FreeSQLBase {
 				//create table main( url varchar(256), name varchar(60000), type varchar(128), id int(32) primary key, rank int(32));
 				//create table other(e_id int(32), t_id int(32), primary key(e_id,t_id));
 				//2*Maxint-1164214229=3130753067
+				
+				String a= "<http://rdf.freebase.com/ns/m.0x2spfl>";
+				System.out.print();
 				Class.forName("com.mysql.jdbc.Driver").newInstance(); // MYSQL驱动
 				con = DriverManager.getConnection("jdbc:mysql://127.0.0.1:3306/master", "root", "thisismysql"); // 链接本地MYSQL
 				System.out.println("yes");
