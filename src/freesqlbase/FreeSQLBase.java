@@ -295,13 +295,52 @@ public class FreeSQLBase {
 		SQLTask[] tsk_te=new SQLTask[TASKS];
 		SQLTask[] tsk_other=new SQLTask[TASKS];
 		SQLTask2[] tsk_str=new SQLTask2[TASKS];
+		SQLTask[] tsk_rank=new SQLTask[TASKS];
 		
 		int tsk_cnt_et=0;
 		int tsk_cnt_te=0;
 		int tsk_cnt_other=0;
 		int tsk_cnt_str=0;
+		int tsk_cnt_rank=0;		
 		boolean readdone=false;
 
+		PreparedStatement getStmt3(SQLTask[] task,int count)
+		{
+			PreparedStatement stmt=null;
+			try {
+				StringBuffer buf=new StringBuffer();
+				buf.append("UPDATE main SET rank = CASE id\n WHEN ? THEN ?\n");
+		        
+		    //WHERE id IN (1,2,3)");
+				for(int i=1;i<count;i++)
+				{
+					buf.append("when ? then ?\n");
+				}
+				buf.append("end\nwhere id in (?");
+				for(int i=1;i<count;i++)
+				{
+					buf.append(",?");
+				}
+				buf.append(")");				
+				stmt = con.prepareStatement(buf.toString());
+			
+				for(int i=0;i<count;i++)
+				{
+					stmt.setInt(i*2+1, task[i].id1);
+					stmt.setInt(i*2+2, task[i].id2);
+				}
+				for(int i=0;i<count;i++)
+				{
+					stmt.setInt(count*2+1+i, task[i].id1);
+				}
+			} catch (SQLException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}		
+			return stmt;
+
+		}
+		
 		PreparedStatement getStmt2(SQLTask2[] task,int count)
 		{
 			PreparedStatement stmt=null;
@@ -352,6 +391,22 @@ public class FreeSQLBase {
 				e.printStackTrace();
 			}		
 			return stmt;
+		}
+		
+		void put_rank(SQLTask t)
+		{
+			synchronized(tsk_rank)
+			{
+				tsk_rank[tsk_cnt_rank]=t;
+				tsk_cnt_rank++;
+				if(tsk_cnt_rank==TASKS)
+				{
+					
+					pool.submit(new StringTask(getStmt3(tsk_rank,tsk_cnt_rank)));
+					tsk_cnt_rank=0;
+					tsk_rank=new SQLTask[TASKS];
+				}
+			}			
 		}
 		
 		void put_str(SQLTask2 t)
@@ -424,7 +479,7 @@ public class FreeSQLBase {
 		
 		void flush()
 		{
-			System.out.printf("flush %d %d %d %d\n",tsk_cnt_te,tsk_cnt_et,tsk_cnt_other,tsk_cnt_str);
+			System.out.printf("flush %d %d %d %d %d\n",tsk_cnt_te,tsk_cnt_et,tsk_cnt_other,tsk_cnt_str,tsk_cnt_rank);
 			synchronized(tsk_te)
 			{
 				if(tsk_cnt_te!=0)
@@ -461,6 +516,15 @@ public class FreeSQLBase {
 					tsk_str=null;
 				}
 			}
+			synchronized(tsk_rank)
+			{
+				if(tsk_cnt_rank!=0)
+				{
+					pool.submit(new StringTask(getStmt3(tsk_rank,tsk_cnt_rank)));
+					tsk_cnt_rank=0;
+					tsk_rank=null;
+				}
+			}
 		}
 	}
 	
@@ -478,6 +542,7 @@ public class FreeSQLBase {
 			BufferedReader reader = new BufferedReader(new InputStreamReader(pis));
 			String last=null;
 			int id=-1;
+			int rank=0;
 			for (;;) {
 				i++;
 				
@@ -487,6 +552,7 @@ public class FreeSQLBase {
 					if(line.isEmpty())
 					{
 						System.out.printf("Almost done\n");
+						sqlbuf.put_rank(new SQLTask(id,rank));
 						sqlbuf.done();
 						if(EntryTask.pending.get()==0)
 						{
@@ -512,13 +578,22 @@ public class FreeSQLBase {
 					///////////////////////////////////////////////
 					if(!sp[0].equals(last))
 					{
+						if(id!=-1)
+						{
+							sqlbuf.put_rank(new SQLTask(id,rank));
+						}
+						rank=0;
 						last=sp[0];
 						id++;
 					}
+					rank++;
 					//if(id<=124519884)
 					//	continue;
-					///////////////////////////////////////////////				
-					linepool.submit(new EntryTask(sp,id));				
+					///////////////////////////////////////////////		
+					
+					
+					//this line should be in use when running the full adaption
+					//linepool.submit(new EntryTask(sp,id));				
 				}
 				catch (IOException e) {
 					// TODO Auto-generated catch block
