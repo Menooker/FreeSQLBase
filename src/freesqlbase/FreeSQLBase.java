@@ -303,8 +303,9 @@ public class FreeSQLBase {
 		int img=-1;
 		String des;
 		String url;
-		Entity(int i,String url)
+		Entity(int i,String u)
 		{
+			url=u;
 			id=i;
 		}
 		void parse (String[] line)
