@@ -149,13 +149,20 @@ public class FreeSQLBase {
 	{		
 		int id;
 		String str; 
+		int id2=-1;
 		public SQLTask2(int i,String s)
 		{
 			id=i;
-			str=s;;
+			str=s;
 		}
+		public SQLTask2(int i,String s,int i2)
+		{
+			id=i;
+			str=s;
+			id2=i2;
+		}		
 	}
-	static private final class StringTask implements Callable<String> {
+	public static final class StringTask implements Callable<String> {
 		PreparedStatement stmt;
 		static AtomicInteger cnt=new AtomicInteger(0);
 		static AtomicInteger pending_cnt=new AtomicInteger(0);
@@ -289,245 +296,57 @@ public class FreeSQLBase {
 		
 	}
 	
-	static class SQLBuffer{
-		final int TASKS=16*1024;
-		SQLTask[] tsk_et=new SQLTask[TASKS];
-		SQLTask[] tsk_te=new SQLTask[TASKS];
-		SQLTask[] tsk_other=new SQLTask[TASKS];
-		SQLTask2[] tsk_str=new SQLTask2[TASKS];
-		SQLTask[] tsk_rank=new SQLTask[TASKS];
-		
-		int tsk_cnt_et=0;
-		int tsk_cnt_te=0;
-		int tsk_cnt_other=0;
-		int tsk_cnt_str=0;
-		int tsk_cnt_rank=0;		
-		boolean readdone=false;
 
-		PreparedStatement getStmt3(SQLTask[] task,int count)
+	static class Entity
+	{
+		int id;
+		int img=-1;
+		String des;
+		String url;
+		Entity(int i,String url)
 		{
-			PreparedStatement stmt=null;
-			try {
-				StringBuffer buf=new StringBuffer();
-				buf.append("UPDATE main SET rank = CASE id\n WHEN ? THEN ?\n");
-		        
-		    //WHERE id IN (1,2,3)");
-				for(int i=1;i<count;i++)
-				{
-					buf.append("when ? then ?\n");
-				}
-				buf.append("end\nwhere id in (?");
-				for(int i=1;i<count;i++)
-				{
-					buf.append(",?");
-				}
-				buf.append(")");				
-				stmt = con.prepareStatement(buf.toString());
-			
-				for(int i=0;i<count;i++)
-				{
-					stmt.setInt(i*2+1, task[i].id1);
-					stmt.setInt(i*2+2, task[i].id2);
-				}
-				for(int i=0;i<count;i++)
-				{
-					stmt.setInt(count*2+1+i, task[i].id1);
-				}
-			} catch (SQLException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-			}		
-			return stmt;
-
+			id=i;
 		}
-		
-		PreparedStatement getStmt2(SQLTask2[] task,int count)
+		void parse (String[] line)
 		{
-			PreparedStatement stmt=null;
-			try {
-				StringBuffer buf=new StringBuffer();
-				buf.append("INSERT INTO strings  VALUES (?,?)");
-				for(int i=1;i<count;i++)
-				{
-					buf.append(",(?,?)");
-				}
-				stmt = con.prepareStatement(buf.toString());
-			
-				for(int i=0;i<count;i++)
-				{
-					stmt.setInt(i*2+1, task[i].id);
-					stmt.setString(i*2+2, task[i].str);
-				}
-				
-			} catch (SQLException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-			}		
-			return stmt;
-		}		
-		
-		PreparedStatement getStmt(SQLTask[] task,int count,String name)
-		{
-			PreparedStatement stmt=null;
-			try {
-				StringBuffer buf=new StringBuffer();
-				buf.append("INSERT INTO ");
-				buf.append(name);
-				buf.append(" VALUES (?,?)");
-				for(int i=1;i<count;i++)
-				{
-					buf.append(",(?,?)");
-				}
-				stmt = con.prepareStatement(buf.toString());
-			
-				for(int i=0;i<count;i++)
-				{
-					stmt.setInt(i*2+1, task[i].id1);
-					stmt.setInt(i*2+2, task[i].id2);
-				}
-				
-			} catch (SQLException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-			}		
-			return stmt;
-		}
-		
-		void put_rank(SQLTask t)
-		{
-			synchronized(tsk_rank)
+			if(line[1].equals("<http://rdf.freebase.com/ns/common.topic.description>"))
 			{
-				tsk_rank[tsk_cnt_rank]=t;
-				tsk_cnt_rank++;
-				if(tsk_cnt_rank==TASKS)
+				if(line[2].endsWith("\"@en"))
 				{
-					
-					pool.submit(new StringTask(getStmt3(tsk_rank,tsk_cnt_rank)));
-					tsk_cnt_rank=0;
-					tsk_rank=new SQLTask[TASKS];
-				}
-			}			
-		}
-		
-		void put_str(SQLTask2 t)
-		{
-			synchronized(tsk_str)
-			{
-				tsk_str[tsk_cnt_str]=t;
-				tsk_cnt_str++;
-				if(tsk_cnt_str==TASKS)
-				{
-					
-					pool.submit(new StringTask(getStmt2(tsk_str,tsk_cnt_str)));
-					tsk_cnt_str=0;
-					tsk_str=new SQLTask2[TASKS];
+					des=line[2].substring(1, line[2].length()-4);
 				}
 			}
-		}
-		
-		
-		void put_other(SQLTask t)
-		{
-			synchronized(tsk_other)
+			else if(line[1].equals("<http://rdf.freebase.com/ns/common.topic.image>"))
 			{
-				tsk_other[tsk_cnt_other]=t;
-				tsk_cnt_other++;
-				if(tsk_cnt_other==TASKS)
-				{
-					
-					pool.submit(new StringTask(getStmt(tsk_other,tsk_cnt_other,"other")));
-					tsk_cnt_other=0;
-					tsk_other=new SQLTask[TASKS];
+				try {
+					img=sqlcache.get(TrimURL(line[2]));
+				} catch (KeyNotFoundException e) {
+					e.printStackTrace();
 				}
+			}
+			else if(line[1].equals("<http://rdf.freebase.com/ns/type.content.source>"))
+			{
+				try {
+					int id2;
+					id2=sqlcache.get(TrimURL(line[2]));
+					sqlbuf.put_content(new SQLTask(id,id2));
+				} catch (KeyNotFoundException e) {
+					e.printStackTrace();
+				}			
+			}
+			else if(line[1].equals("<http://rdf.freebase.com/ns/type.content_import.url>"))
+			{
+				sqlbuf.put_source(new SQLTask2(id,line[2]));	
 			}
 		}
-		
-		void put_te(SQLTask t)
+		void end()
 		{
-			synchronized(tsk_te)
-			{
-				tsk_te[tsk_cnt_te]=t;
-				tsk_cnt_te++;
-				if(tsk_cnt_te==TASKS)
-				{
-					pool.submit(new StringTask(getStmt(tsk_te,tsk_cnt_te,"type_entity")));
-					tsk_cnt_te=0;
-					tsk_te=new SQLTask[TASKS];
-				}
-			}
-		}
-		
-		void put_et(SQLTask t)
-		{
-			synchronized(tsk_et)
-			{
-				tsk_et[tsk_cnt_et]=t;
-				tsk_cnt_et++;
-				if(tsk_cnt_et==TASKS)
-				{
-					pool.submit(new StringTask(getStmt(tsk_et,tsk_cnt_et,"entity_type")));
-					tsk_cnt_et=0;
-					tsk_et=new SQLTask[TASKS];
-				}
-			}
-		}
-		
-		void done()
-		{
-			readdone=true;
-		}
-		
-		void flush()
-		{
-			System.out.printf("flush %d %d %d %d %d\n",tsk_cnt_te,tsk_cnt_et,tsk_cnt_other,tsk_cnt_str,tsk_cnt_rank);
-			synchronized(tsk_te)
-			{
-				if(tsk_cnt_te!=0)
-				{
-					pool.submit(new StringTask(getStmt(tsk_te,tsk_cnt_te,"type_entity")));	
-					tsk_cnt_te=0;
-					tsk_te=null;
-				}
-			}
-			synchronized(tsk_et)
-			{
-				if(tsk_cnt_et!=0)
-				{
-					pool.submit(new StringTask(getStmt(tsk_et,tsk_cnt_et,"entity_type")));
-					tsk_cnt_et=0;
-					tsk_et=null;
-				}
-			}
-			synchronized(tsk_other)
-			{
-				if(tsk_cnt_other!=0)
-				{
-					pool.submit(new StringTask(getStmt(tsk_other,tsk_cnt_other,"other")));
-					tsk_cnt_other=0;
-					tsk_other=null;
-				}
-			}
-			synchronized(tsk_str)
-			{
-				if(tsk_cnt_str!=0)
-				{
-					pool.submit(new StringTask(getStmt2(tsk_str,tsk_cnt_str)));
-					tsk_cnt_str=0;
-					tsk_str=null;
-				}
-			}
-			synchronized(tsk_rank)
-			{
-				if(tsk_cnt_rank!=0)
-				{
-					pool.submit(new StringTask(getStmt3(tsk_rank,tsk_cnt_rank)));
-					tsk_cnt_rank=0;
-					tsk_rank=null;
-				}
+			if(url.startsWith("<http://rdf.freebase.com/ns/m."))
+			{//if it is an entity
+				sqlbuf.put_entity(new SQLTask2(id,des,img));
 			}
 		}
 	}
-	
 
 	
 	static class ReaderThread extends  Thread {
@@ -543,6 +362,7 @@ public class FreeSQLBase {
 			String last=null;
 			int id=-1;
 			int rank=0;
+			Entity cur=null;
 			for (;;) {
 				i++;
 				
@@ -580,13 +400,17 @@ public class FreeSQLBase {
 					{
 						if(id!=-1)
 						{
-							sqlbuf.put_rank(new SQLTask(id,rank));
+							cur.end();
+							//this line should be in use when running the full adaption
+							//sqlbuf.put_rank(new SQLTask(id,rank));
 						}
 						rank=0;
 						last=sp[0];
 						id++;
+						cur=new Entity(id,sp[0]);
 					}
 					rank++;
+					cur.parse(sp);
 					//if(id<=124519884)
 					//	continue;
 					///////////////////////////////////////////////		
