@@ -316,6 +316,10 @@ public class FreeSQLBase {
 				{
 					des=line[2].substring(1, line[2].length()-4);
 				}
+				if(des.length()>65530)
+				{
+					des=des.substring(0, 65530);
+				}
 			}
 			else if(line[1].equals("<http://rdf.freebase.com/ns/common.topic.image>"))
 			{
@@ -337,6 +341,10 @@ public class FreeSQLBase {
 			}
 			else if(line[1].equals("<http://rdf.freebase.com/ns/type.content_import.uri>"))
 			{
+				if(line[2].length()>65530)
+				{
+					line[2]=line[2].substring(0, 65530);
+				}
 				sqlbuf.put_source(new SQLTask2(id,line[2]));	
 			}
 		}
