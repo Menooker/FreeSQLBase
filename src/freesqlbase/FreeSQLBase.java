@@ -335,7 +335,7 @@ public class FreeSQLBase {
 					e.printStackTrace();
 				}			
 			}
-			else if(line[1].equals("<http://rdf.freebase.com/ns/type.content_import.url>"))
+			else if(line[1].equals("<http://rdf.freebase.com/ns/type.content_import.uri>"))
 			{
 				sqlbuf.put_source(new SQLTask2(id,line[2]));	
 			}
